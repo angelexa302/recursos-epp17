@@ -1,0 +1,94 @@
+// ========== CÓDIGO.GS ==========
+// Pegá esto en tu Apps Script
+
+function doGet(e) {
+  const action = e && e.parameter && e.parameter.action;
+
+  if (action === 'getDisponibilidad') {
+    const fecha = e.parameter.fecha;
+    const result = getDisponibilidad(fecha);
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'realizarReserva') {
+    const fecha = e.parameter.fecha;
+    const horarios = e.parameter.horarios.split(',');
+    const recursos = e.parameter.recursos.split('|');
+    const nombre = e.parameter.nombre;
+    const curso = e.parameter.curso;
+    const result = realizarReserva(fecha, horarios, recursos, nombre, curso);
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+}
+
+function getDisponibilidad(fecha) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Reservas');
+  const data = sheet.getDataRange().getValues();
+  
+  const disponibilidad = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const fFecha = data[i][0];
+    const fHora = String(data[i][1]);
+    const fRecurso = data[i][2];
+    const fNombre = data[i][3];
+    const fCurso = data[i][4];
+    
+    if (!fFecha || !fHora || !fRecurso) continue;
+    
+    let fechaStr;
+    if (fFecha instanceof Date) {
+      fechaStr = Utilities.formatDate(fFecha, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+    } else {
+      fechaStr = String(fFecha).trim();
+    }
+    
+    if (fechaStr === fecha) {
+      const key = fHora + '_' + fRecurso;
+      disponibilidad[key] = fNombre + ' (' + fCurso + ')';
+    }
+  }
+  
+  return disponibilidad;
+}
+
+function realizarReserva(fecha, horarios, recursos, nombre, curso) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Reservas');
+  
+  // Verificar conflictos primero
+  const disponibilidad = getDisponibilidad(fecha);
+  const conflictos = [];
+  
+  for (const hora of horarios) {
+    for (const recurso of recursos) {
+      const key = hora + '_' + recurso;
+      if (disponibilidad[key]) {
+        conflictos.push(recurso + ' en hora ' + hora);
+      }
+    }
+  }
+  
+  if (conflictos.length > 0) {
+    return { 
+      ok: false, 
+      mensaje: 'Los siguientes recursos ya están reservados: ' + conflictos.join(', ') + '. Por favor elegí otros.'
+    };
+  }
+  
+  // Registrar todas las combinaciones
+  const timestamp = new Date();
+  for (const hora of horarios) {
+    for (const recurso of recursos) {
+      sheet.appendRow([fecha, hora, recurso, nombre, curso, timestamp]);
+    }
+  }
+  
+  const detalle = recursos.length + ' recurso(s) en ' + horarios.length + ' horario(s)';
+  return { ok: true, detalle: detalle };
+}
