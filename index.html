@@ -192,6 +192,9 @@
       margin-top: 4px;
       font-weight: normal;
     }
+
+    .grupo-btn { cursor: pointer; }
+    .chevron { margin-left: 6px; font-size: 11px; opacity: 0.7; }
     .seleccionados-resumen {
       margin-top: 8px;
       padding: 10px 12px;
@@ -399,6 +402,8 @@ function toggleHorario(el, hora) {
   verificarFormulario();
 }
 
+let controlesExpanded = false;
+
 function renderRecursos() {
   const grid = document.getElementById('recursosGrid');
   
@@ -410,15 +415,90 @@ function renderRecursos() {
   }
 
   grid.innerHTML = '';
-  RECURSOS.forEach(recurso => {
-    // Verificar si está ocupado en ALGUNO de los horarios seleccionados
+
+  // Separar controles remotos del resto
+  const controles = RECURSOS.filter(r => r.startsWith('Control remoto'));
+  const otros = RECURSOS.filter(r => !r.startsWith('Control remoto'));
+
+  // Verificar estado general de los controles
+  const controlesOcupados = controles.filter(r => {
+    for (const hora of horariosSeleccionados) {
+      if (disponibilidad[hora + '_' + r]) return true;
+    }
+    return false;
+  });
+  const controlesSeleccionados = controles.filter(r => recursosSeleccionados.includes(r));
+  const totalOcupados = controlesOcupados.length;
+  const totalLibres = controles.length - totalOcupados;
+
+  // Botón agrupador de controles
+  const grupoBadge = controlesSeleccionados.length > 0 
+    ? `✓ ${controlesSeleccionados.length} seleccionado(s)`
+    : totalOcupados === controles.length 
+      ? 'Todos reservados' 
+      : `${totalLibres} disponible(s)`;
+  
+  const grupoColor = controlesSeleccionados.length > 0 ? ' selected' : totalOcupados === controles.length ? ' ocupado' : '';
+
+  const grupoDiv = document.createElement('div');
+  grupoDiv.className = 'recurso-btn grupo-btn' + grupoColor;
+  grupoDiv.innerHTML = `
+    <span class="icono">📽️</span>
+    <span>Control remoto proyector</span>
+    <span class="badge">${grupoBadge}</span>
+    <span class="chevron" id="chevronControles">${controlesExpanded ? '▲' : '▼'}</span>
+  `;
+  grupoDiv.onclick = function() { toggleControles(); };
+  grid.appendChild(grupoDiv);
+
+  // Submenú de controles (expandible)
+  const subMenu = document.createElement('div');
+  subMenu.id = 'subMenuControles';
+  subMenu.style.display = controlesExpanded ? 'block' : 'none';
+  subMenu.style.paddingLeft = '12px';
+  subMenu.style.borderLeft = '3px solid #1a3a5c';
+  subMenu.style.marginBottom = '4px';
+
+  controles.forEach(recurso => {
     let ocupadoPor = null;
     for (const hora of horariosSeleccionados) {
       const key = hora + '_' + recurso;
-      if (disponibilidad[key]) {
-        ocupadoPor = disponibilidad[key];
-        break;
-      }
+      if (disponibilidad[key]) { ocupadoPor = disponibilidad[key]; break; }
+    }
+
+    const div = document.createElement('div');
+    const icono = '📽️';
+    
+    if (ocupadoPor) {
+      div.className = 'recurso-btn ocupado';
+      div.style.marginTop = '6px';
+      div.innerHTML = `
+        <span class="icono">${icono}</span>
+        <span>${recurso}</span>
+        <span class="badge">Reservado</span>
+      `;
+      div.onclick = function() { abrirModal(recurso, icono, ocupadoPor); };
+    } else {
+      const seleccionado = recursosSeleccionados.includes(recurso);
+      div.className = 'recurso-btn' + (seleccionado ? ' selected' : '');
+      div.style.marginTop = '6px';
+      div.innerHTML = `
+        <span class="icono">${icono}</span>
+        <span>${recurso}</span>
+        <span class="badge">${seleccionado ? '✓ Seleccionado' : 'Disponible'}</span>
+      `;
+      div.onclick = function(e) { e.stopPropagation(); toggleRecurso(recurso); };
+    }
+    subMenu.appendChild(div);
+  });
+  grid.appendChild(subMenu);
+
+  // Resto de recursos
+  otros.forEach(recurso => {
+    let ocupadoPor = null;
+    for (const hora of horariosSeleccionados) {
+      const key = hora + '_' + recurso;
+      if (disponibilidad[key]) { ocupadoPor = disponibilidad[key]; break; }
     }
 
     const div = document.createElement('div');
@@ -444,7 +524,13 @@ function renderRecursos() {
     }
     grid.appendChild(div);
   });
+
   actualizarResumen();
+}
+
+function toggleControles() {
+  controlesExpanded = !controlesExpanded;
+  renderRecursos();
 }
 
 function toggleRecurso(recurso) {
